@@ -125,7 +125,7 @@ def buscar_por_pais(pais: str):
     if resultado:
         return resultado
     else:
-        {"error": "No encontrado"}
+        return {"error": "No encontrado"}
 
 # =========================
 # POST (PROTEGIDO)
@@ -187,5 +187,7 @@ def eliminar_libro(titulo: str, credentials: HTTPBasicCredentials = Depends(veri
 
     return {"message": "Libro eliminado"}
 
-
-
+if __name__ == "__main__":
+    import uvicorn
+    print("Iniciando servidor para toda la red local...")
+    uvicorn.run(app, host="0.0.0.0", port=8000)

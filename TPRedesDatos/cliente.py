@@ -1,7 +1,11 @@
 import requests
 import webbrowser
 
-URL = "http://127.0.0.1:8000"
+print("=== CONFIGURACIÓN DE CONEXIÓN ===")
+ip_ingresada = input("Ingrese la IP del servidor (Presione Enter para probar en la misma PC): ").strip()
+IP_SERVIDOR = ip_ingresada if ip_ingresada else "127.0.0.1"
+URL = f"http://{IP_SERVIDOR}:8000"
+print(f"Conectando a {URL}...\n")
 
 USUARIO = ""
 PASSWORD = ""
@@ -35,146 +39,203 @@ def login():
     return False
 
 
+def pedir_entero(mensaje):
+    """Pide un valor entero y vuelve a preguntar si se ingresa texto por error."""
+    while True:
+        try:
+            return int(input(mensaje))
+        except ValueError:
+            print("[Error] Por favor, ingrese solo números enteros.")
+
+
+def manejar_respuesta(r):
+    """Maneja los distintos códigos de estado HTTP que puede devolver el servidor."""
+    if r.status_code == 429:
+        print("\n[Alerta] Estás haciendo consultas muy rápido. Esperá 1 segundo.")
+        return None
+    elif r.status_code != 200:
+        detalle = "Error desconocido"
+        try:
+            detalle = r.json().get('detail', 'Error desconocido')
+        except:
+            pass
+        print(f"\n[Error HTTP {r.status_code}] {detalle}")
+        return None
+    return r.json()
+
+
+def hacer_peticion(metodo, endpoint, **kwargs):
+    """Función central para manejar todas las peticiones y atajar errores de red."""
+    try:
+        if metodo == 'GET':
+            r = requests.get(f"{URL}{endpoint}", **kwargs)
+        elif metodo == 'POST':
+            r = requests.post(f"{URL}{endpoint}", **kwargs)
+        elif metodo == 'PUT':
+            r = requests.put(f"{URL}{endpoint}", **kwargs)
+        elif metodo == 'DELETE':
+            r = requests.delete(f"{URL}{endpoint}", **kwargs)
+        else:
+            return None
+        return manejar_respuesta(r)
+    
+    except requests.exceptions.ConnectionError:
+        print("\n[Error] No se pudo conectar con el servidor. Verifique que esté encendido (uvicorn).")
+        return None
+    except Exception as e:
+        print(f"\n[Error Inesperado] {e}")
+        return None
+
+
 def mostrar_libros(datos):
 
+    if datos is None:
+        return
+
     if isinstance(datos, dict):
-
         if "error" in datos:
-            print("\n", datos["error"])
+            print("\n" + datos["error"])
             return
-
         datos = [datos]
 
-    for i, libro in enumerate(datos, start=1):
+    if not datos:
+        print("\nNo se encontraron libros.")
+        return
 
+    for i, libro in enumerate(datos, start=1):
         print("\n" + "=" * 50)
         print(f"LIBRO {i}")
         print("=" * 50)
-        print(f"Título     : {libro['title']}")
-        print(f"Autor      : {libro['author']}")
-        print(f"País       : {libro['country']}")
-        print(f"Idioma     : {libro['language']}")
-        print(f"Páginas    : {libro['pages']}")
-        print(f"Año        : {libro['year']}")
-        print(f"Imagen     : {libro['imageLink']}")
-        print(f"Link       : {libro['link']}")
+        print(f"Título     : {libro.get('title', '')}")
+        print(f"Autor      : {libro.get('author', '')}")
+        print(f"País       : {libro.get('country', '')}")
+        print(f"Idioma     : {libro.get('language', '')}")
+        print(f"Páginas    : {libro.get('pages', '')}")
+        print(f"Año        : {libro.get('year', '')}")
+        print(f"Imagen     : {libro.get('imageLink', '')}")
+        print(f"Link       : {libro.get('link', '')}")
         print("=" * 50)
 
 
 def obtener_libros():
-    r = requests.get(f"{URL}/libros")
-    mostrar_libros(r.json())
+    datos = hacer_peticion('GET', "/libros")
+    mostrar_libros(datos)
 
 
 def buscar_autor():
     autor = input("Ingrese autor: ")
-    r = requests.get(f"{URL}/autor/{autor}")
-    mostrar_libros(r.json())
+    datos = hacer_peticion('GET', f"/autor/{autor}")
+    mostrar_libros(datos)
 
 
 def buscar_titulo():
     titulo = input("Ingrese titulo: ")
-    r = requests.get(f"{URL}/titulo/{titulo}")
-    mostrar_libros(r.json())
+    datos = hacer_peticion('GET', f"/titulo/{titulo}")
+    mostrar_libros(datos)
+
+
+def buscar_pais():
+    pais = input("Ingrese pais: ")
+    datos = hacer_peticion('GET', f"/pais/{pais}")
+    mostrar_libros(datos)
 
 
 def agregar_libro():
-
     libro = {
         "author": input("Autor: "),
         "country": input("Pais: "),
         "imageLink": input("Imagen (ruta): "),
         "language": input("Idioma: "),
         "link": input("Link: "),
-        "pages": int(input("Paginas: ")),
+        "pages": pedir_entero("Paginas: "),
         "title": input("Titulo: "),
-        "year": int(input("Año: "))
+        "year": pedir_entero("Año: ")
     }
 
-    r = requests.post(f"{URL}/libros",json=libro,auth=(USUARIO, PASSWORD))
-    print(r.json())
+    datos = hacer_peticion('POST', "/libros", json=libro, auth=(USUARIO, PASSWORD))
+    if datos:
+        print(f"\nRespuesta del servidor: {datos}")
 
 
 def modificar_libro():
-
     titulo = input("Titulo del libro a modificar: ")
 
+    # Primero verificamos si el libro existe en el servidor
+    verificacion = hacer_peticion('GET', f"/titulo/{titulo}")
+    if verificacion is None:
+        return
+    if "error" in verificacion:
+        print(f"\n[Error] No se encontró ningún libro con el título '{titulo}'.")
+        return
+
+    print("\nLibro encontrado. Ingrese los nuevos datos:")
     libro = {
         "author": input("Nuevo autor: "),
         "country": input("Nuevo pais: "),
         "imageLink": input("Nueva imagen: "),
         "language": input("Nuevo idioma: "),
         "link": input("Nuevo link: "),
-        "pages": int(input("Nuevas paginas: ")),
+        "pages": pedir_entero("Nuevas paginas: "),
         "title": titulo,
-        "year": int(input("Nuevo año: "))
+        "year": pedir_entero("Nuevo año: ")
     }
 
-    r = requests.put(f"{URL}/libros/{titulo}",json=libro,auth=(USUARIO, PASSWORD))
-
-    print(r.json())
+    datos = hacer_peticion('PUT', f"/libros/{titulo}", json=libro, auth=(USUARIO, PASSWORD))
+    if datos:
+        print(f"\nRespuesta del servidor: {datos}")
 
 
 def eliminar_libro():
-
     titulo = input("Titulo a eliminar: ")
-    r = requests.delete(f"{URL}/libros/{titulo}",auth=(USUARIO, PASSWORD))
-    print(r.json())
+    
+    datos = hacer_peticion('DELETE', f"/libros/{titulo}", auth=(USUARIO, PASSWORD))
+    if datos:
+        print(f"\nRespuesta del servidor: {datos}")
 
 
 def abrir_api():
-
     webbrowser.open(f"{URL}/docs")
     print("Abriendo documentación de la API...")
 
 
 def mostrar_menu():
-
     while True:
-
         print("\n===== MENU LIBROS API =====")
         print("1. Ver todos los libros")
         print("2. Buscar por autor")
         print("3. Buscar por titulo")
-        print("4. Agregar libro")
-        print("5. Modificar libro")
-        print("6. Eliminar libro")
-        print("7. Abrir documentación API")
+        print("4. Buscar por pais")
+        print("5. Agregar libro")
+        print("6. Modificar libro")
+        print("7. Eliminar libro")
+        print("8. Abrir documentación API")
         print("0. Salir")
 
         opcion = input("Seleccione una opcion: ")
 
         if opcion == "1":
             obtener_libros()
-
         elif opcion == "2":
             buscar_autor()
-
         elif opcion == "3":
             buscar_titulo()
-
         elif opcion == "4":
-            agregar_libro()
-
+            buscar_pais()
         elif opcion == "5":
-            modificar_libro()
-
+            agregar_libro()
         elif opcion == "6":
-            eliminar_libro()
-
+            modificar_libro()
         elif opcion == "7":
+            eliminar_libro()
+        elif opcion == "8":
             abrir_api()
-
         elif opcion == "0":
             print("Saliendo...")
             break
-
         else:
             print("Opción inválida")
 
 
 if __name__ == "__main__":
-
     if login():
         mostrar_menu()
-        
