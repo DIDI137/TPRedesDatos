@@ -118,9 +118,7 @@ def modificar_libro():
 def eliminar_libro():
 
     titulo = input("Titulo a eliminar: ")
-
     r = requests.delete(f"{URL}/libros/{titulo}",auth=(USUARIO, PASSWORD))
-
     print(r.json())
 
 
@@ -179,3 +177,4 @@ if __name__ == "__main__":
 
     if login():
         mostrar_menu()
+        
